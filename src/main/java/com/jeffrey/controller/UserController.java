@@ -10,12 +10,15 @@ import com.jeffrey.utils.ThreadLocalUtil;
 import jakarta.validation.constraints.Pattern;
 import org.hibernate.validator.constraints.URL;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/user")
@@ -23,9 +26,11 @@ import java.util.Map;
 public class UserController {
     @Autowired
     private UserService userService;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     @PatchMapping("/updatePwd")
-    public Result updatePwd(@RequestBody Map<String, String> params) {
+    public Result updatePwd(@RequestBody Map<String, String> params,@RequestHeader(name = "Authorization") String token) {
         String old_pwd = params.get("old_pwd");
         String new_pwd = params.get("new_pwd");
         String re_pwd = params.get("re_pwd");
@@ -45,6 +50,9 @@ public class UserController {
             return Result.error("两次密码不一致");
         }
         userService.updatePwd(new_pwd);
+        //删除redis中token
+        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
+        ops.getOperations().delete(token);
         return Result.success();
     }
 
@@ -96,6 +104,8 @@ public class UserController {
             claims.put("id",loginuser.getId());
             claims.put("username",loginuser.getUsername());
             String token = JwtUtil.genToken(claims);
+            ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
+            ops.set(token,token,1, TimeUnit.HOURS);
             return Result.success(token);
         }
         return Result.error("密码错误");
